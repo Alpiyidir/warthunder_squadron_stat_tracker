@@ -25,7 +25,7 @@ class SquadronInfoTracker:
 
         self.driver.get(squadronInfoLink)
 
-    def get_info_from_squadron(self, squadronName):
+    def get_player_rating_from_squadron(self, squadronName, playerName):
         self.go_to_squadron_page(squadronName)
 
         table = self.driver.find_element(By.CLASS_NAME, "squadrons-members__table")
@@ -36,27 +36,32 @@ class SquadronInfoTracker:
         headers = tableElements[slice(0, 6)]
         for i, e in enumerate(headers):
             headers[i] = e.text
-            print(e.text)
 
         # Removes headers from tableElements
         tableElements = tableElements[slice(6, len(tableElements))]
 
-        playerInfoDict = {}
-
+        playerRating = {}
         rowCounter = 0
         for row in tableElements:
             if rowCounter == 1:
-                playerKey = row.text
-                playerInfoDict[playerKey] = {}
-            elif rowCounter > 1:
-                playerInfoDict[playerKey][headers[rowCounter]] = row.text
+                playerKey = row.text.lower()
+                playerRating[playerKey] = {}
+            elif rowCounter == 2:
+                playerRating[playerKey] = row.text
 
             rowCounter += 1
             if rowCounter == 6:
                 rowCounter = 0
 
-        print(playerInfoDict["Alpiyidir"]["PERSONAL CLAN RATING"])
+        if playerName in playerRating.keys():
+            return playerRating[playerName]
+        else:
+            print("Player not found in specified squadron.")
+            return -1
+
+    def get_player_rating_from_db(self, playerName):
+        print("")
 
 
 a = SquadronInfoTracker()
-a.get_info_from_squadron("Immortal Legion")
+print(a.get_player_rating_from_squadron("Immortal Legion", "Exosin".lower()))
