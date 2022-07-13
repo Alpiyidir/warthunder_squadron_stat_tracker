@@ -53,7 +53,6 @@ class SquadronInfoTracker:
         for row in tableElements:
             if rowCounter == 1:
                 playerKey = row.text.lower()
-                playerRatings[playerKey] = {}
             elif rowCounter == 2:
                 playerRatings[playerKey] = row.text
 
@@ -77,8 +76,41 @@ class SquadronInfoTracker:
 
         playerRatings = self.get_players_ratings_from_squadron(squadronName)
 
-        for player in playerRatings:
-            print("")
+        conn = sqlite3.connect("squadronstats.db")
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        # Checks to see if squadron entry exists in squadron table, if not adds it to the table
+        c.execute("SELECT id FROM squadrons WHERE name = ?", [squadronName])
+        squadron = c.fetchone()
+
+        if squadron:
+            squadronId = squadron["id"]
+        # Else, this is the first instance of this squadron being updated so the squadron name is added to the sq. table
+        else:
+            c.execute("INSERT INTO squadrons (name) VALUES (?)", [squadronName])
+
+
+        for name, currentRating in playerRatings.items():
+            c.execute("SELECT id FROM players WHERE name = ?", [name])
+            player = c.fetchone()
+            if player:
+                playerId = player["id"]
+
+                c.execute("SELECT rating FROM actions WHERE player_id = ?", [playerId])
+                dbRating = c.fetchone()["rating"]
+
+                # If the current rating of the player is the same as the database entry is the same, no new entry is
+                # created and the timestamp for the db entry is edited, otherwise, a new entry with the new timestamp of
+                # the time this rating was first seen is created
+                if currentRating == dbRating:
+                    c.execute("UPDATE actions SET timestamp = ? WHERE player_id = ?", [time.time(), playerId])
+                else:
+                    c.execute("INSERT INTO actions (player_id, squadron_id, rating, timestamp) VALUES (?, ?, ?, ?)",
+                              [playerId, squadronId, currentRating, time.time()])
+            else:
+
+        conn.close()
 
     def update_info_for_all_squadrons(self):
         print("")
@@ -101,5 +133,6 @@ class SquadronInfoTracker:
 
 
 a = SquadronInfoTracker()
-print(a.get_player_rating_from_squadron("Immortal Legion", "ExoSin"))
-print(a.get_player_rating_from_db("Alpiyidir"))
+print(a.get_player_rating_from_squadron("Immortal Legion", "Alpiyidir"))
+#print(a.get_player_rating_from_db("Alpiyidir"))
+a.update_squadron_info("Immortal Legion")
