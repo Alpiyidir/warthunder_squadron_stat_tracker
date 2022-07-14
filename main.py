@@ -21,6 +21,9 @@ class SquadronInfoTracker:
     def __init__(self):
         self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
+    def quit(self):
+        self.driver.close()
+
     def go_to_squadron_page(self, squadronName):
         splitSquadronName = squadronName.split()
         squadronInfoLink = "https://warthunder.com/en/community/claninfo/"
@@ -129,6 +132,10 @@ class SquadronInfoTracker:
                               [currentTime, playerId, dbTimestamp])
                     conn.commit()
                     dbUpdatedForPlayer = True
+                # This condition means that the player has changed squadrons, therefore their name is removed from the
+                elif currentSquadronId != dbSquadronId:
+                    # TODO think about what can be done in this case
+                    pass
 
             # If no action has yet been done on the db, there either wasn't a player that existed, or if there was a
             # player that previously existed in the db their rating/squadron has changed therefore a new entry is made
@@ -138,17 +145,6 @@ class SquadronInfoTracker:
                 conn.commit()
 
         conn.close()
-
-    def scrape(self):
-        conn = sqlite3.connect("squadronstats.db")
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-
-        c.execute("SELECT name FROM squadrons")
-        squadrons = c.fetchall()
-        for squadron in squadrons:
-            self.go_to_squadron_page(squadron["name"])
-            print(squadron["name"])
 
     # TODO check for auto redirects
     def update_info_for_all_squadrons(self):
@@ -184,6 +180,7 @@ class SquadronInfoTracker:
 
 
 a = SquadronInfoTracker()
-# print(a.get_player_rating_from_squadron("Immortal Legion", "Alpiyidir"))
-# print(a.get_player_rating_from_db("Alpiyidir"))
+#print(a.get_player_rating_from_squadron("Immortal Legion", "Alpiyidir"))
+#print(a.get_player_rating_from_db("Alpiyidir"))
 a.update_info_for_all_squadrons()
+a.quit()
