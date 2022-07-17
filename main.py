@@ -1,186 +1,134 @@
-import sqlite3
+import beautifultracker as tr
 
-import time
+import datetime
+from datetime import timezone
 
-from selenium import webdriver
-from webdriver_manager.chrome import ChromeDriverManager
+import nextcord
+from nextcord import Interaction
+from nextcord.ext import commands, tasks
 
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+intents = nextcord.Intents.default()
+intents.members = True
+intents.message_content = True
 
-caps = DesiredCapabilities().CHROME
-caps["pageLoadStrategy"] = "none"
+commandPrefix = "#"
 
-options = Options()
-options.add_argument("--headless")
-
-
-class SquadronInfoTracker:
-    def __init__(self):
-        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-
-    def quit(self):
-        self.driver.close()
-
-    def go_to_squadron_page(self, squadronName):
-        splitSquadronName = squadronName.split()
-        squadronInfoLink = "https://warthunder.com/en/community/claninfo/"
-        for i in range(len(splitSquadronName)):
-            squadronInfoLink += splitSquadronName[i]
-
-            # If the current word is not the last word %20 is added to show the presence of a space
-            if not i == len(splitSquadronName) - 1:
-                squadronInfoLink += "%20"
-
-        self.driver.get(squadronInfoLink)
-
-    def get_players_ratings_from_squadron(self, squadronName):
-        self.go_to_squadron_page(squadronName)
-
-        table = self.driver.find_element(By.CLASS_NAME, "squadrons-members__table")
-
-        tableElements = table.find_elements(By.CLASS_NAME, "squadrons-members__grid-item")
-
-        # Gets first 6 elements from tableElements and converts the divs into text and stores header
-        headers = tableElements[slice(0, 6)]
-        for i, e in enumerate(headers):
-            headers[i] = e.text
-
-        # Removes headers from tableElements
-        tableElements = tableElements[slice(6, len(tableElements))]
-
-        playerRatings = {}
-        rowCounter = 0
-        for row in tableElements:
-            if rowCounter == 1:
-                playerKey = row.text.lower()
-            elif rowCounter == 2:
-                playerRatings[playerKey] = int(row.text)
-
-            rowCounter += 1
-            if rowCounter == 6:
-                rowCounter = 0
-
-        return playerRatings
-
-    def get_player_rating_from_squadron(self, squadronName, playerName):
-        playerRatings = self.get_players_ratings_from_squadron(squadronName)
-
-        if playerName.lower() in playerRatings.keys():
-            return playerRatings[playerName.lower()]
-        else:
-            print("Player not found in specified squadron.")
-            return -1
-
-    def update_squadron_info(self, squadronName):
-        playerRatings = self.get_players_ratings_from_squadron(squadronName)
-
-        conn = sqlite3.connect("squadronstats.db")
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-
-        # Checks to see if squadron entry exists in squadron table, if not adds it to the table
-        c.execute("SELECT id FROM squadrons WHERE name = ?", [squadronName])
-        squadron = c.fetchone()
-
-        if squadron:
-            currentSquadronId = squadron["id"]
-        # Else, this is the first instance of this squadron being updated so the squadron name is added to the sq. table
-        else:
-            c.execute("INSERT INTO squadrons (name) VALUES (?)", [squadronName])
-            conn.commit()
-
-            c.execute("SELECT id FROM squadrons WHERE name = ?", [squadronName])
-            currentSquadronId = c.fetchone()["id"]
-
-        for playerName, currentRating in playerRatings.items():
-            c.execute("SELECT id FROM players WHERE name = ?", [playerName])
-            player = c.fetchone()
-
-            # If player is not already in the database, creates a new entry for them and gets their id, otherwise uses
-            # existing id
-            if player:
-                playerId = player["id"]
-            else:
-                c.execute("INSERT INTO players (name) VALUES (?)", [playerName])
-                conn.commit()
-                c.execute("SELECT id FROM players WHERE name = ?", [playerName])
-                playerId = c.fetchone()["id"]
-
-            # If player is already in the database checks if the last rating entry has the same rating as the current
-            # rating entry, otherwise, it just writes the current rating entry as the player has never been logged
-            # before
-            currentTime = int(time.time())
-            dbUpdatedForPlayer = False
-            # Fetches most recent rating entry using timestamp
-            c.execute(
-                "SELECT rating, squadron_id, timestamp FROM activity WHERE player_id = ? ORDER BY timestamp DESC LIMIT 1",
-                [playerId])
-            playerInfo = c.fetchone()
-            if playerInfo:
-                dbRating = playerInfo["rating"]
-                dbSquadronId = playerInfo["squadron_id"]
-                dbTimestamp = playerInfo["timestamp"]
-
-                # If the current rating of the player is the same as the database entry is the same, no new entry is
-                # created and the timestamp for the db entry is edited, otherwise, a new entry with the new timestamp of
-                # the time this rating was first seen is created
-                if currentRating == dbRating and currentSquadronId == dbSquadronId:
-                    c.execute("UPDATE activity SET timestamp = ? WHERE player_id = ? AND timestamp = ?",
-                              [currentTime, playerId, dbTimestamp])
-                    conn.commit()
-                    dbUpdatedForPlayer = True
-                # This condition means that the player has changed squadrons, therefore their name is removed from the
-                elif currentSquadronId != dbSquadronId:
-                    # TODO think about what can be done in this case
-                    pass
-
-            # If no action has yet been done on the db, there either wasn't a player that existed, or if there was a
-            # player that previously existed in the db their rating/squadron has changed therefore a new entry is made
-            if not dbUpdatedForPlayer:
-                c.execute("INSERT INTO activity (player_id, squadron_id, rating, timestamp) VALUES (?, ?, ?, ?)",
-                          [playerId, currentSquadronId, currentRating, currentTime])
-                conn.commit()
-
-        conn.close()
-
-    # TODO check for auto redirects
-    def update_info_for_all_squadrons(self):
-        conn = sqlite3.connect("squadronstats.db")
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-
-        c.execute("SELECT name FROM squadrons")
-        squadrons = c.fetchall()
-        for squadron in squadrons:
-            print(squadron["name"])
-            self.update_squadron_info(squadron["name"])
-
-    # TODO don't forget if a player changes squadrons during the player search they will have to get added to the list
-    # TODO again, if this happens nuke their old player entry in the table until their new squadron is added
-    @staticmethod
-    def get_player_rating_from_db(playerName):
-        conn = sqlite3.connect("squadronstats.db")
-        conn.row_factory = sqlite3.Row
-        c = conn.cursor()
-
-        c.execute(
-            "SELECT rating, squadron_info FROM activity WHERE player_id IN(SELECT id FROM players WHERE name = ?) ORDER BY timestamp DESC",
-            [playerName])
-        row = c.fetchone()
-
-        if not row:
-            conn.close()
-            return -1
-        else:
-            conn.close()
-            return row["rating"]
+client = commands.Bot(command_prefix=commandPrefix, intents=intents)
 
 
-a = SquadronInfoTracker()
-#print(a.get_player_rating_from_squadron("Immortal Legion", "Alpiyidir"))
-#print(a.get_player_rating_from_db("Alpiyidir"))
-a.update_info_for_all_squadrons()
-a.quit()
+@client.event
+async def on_ready():
+    print("Wakey wakey, I am awake.")
+
+
+@tasks.loop(seconds=120)
+async def database_update_loop():
+    await tr.update_info_for_all_squadrons()
+
+
+# This never gets called as it has subcommands.
+@client.slash_command(name="search")
+async def search(interaction: Interaction):
+    pass
+
+
+@search.subcommand(name="date",
+                   description="Gets activity of a player for the time interval chosen, times in UTC.")
+async def date(interaction: Interaction,
+               name: str = nextcord.SlashOption(required=True, description="Player name in war thunder"),
+               startday: int = nextcord.SlashOption(required=True, description="Start day"),
+               startmonth: int = nextcord.SlashOption(required=True, description="Start month"),
+               startyear: int = nextcord.SlashOption(required=True, description="Start year"),
+               endday: int = nextcord.SlashOption(default=datetime.datetime.utcnow().day, description="End day"),
+               endmonth: int = nextcord.SlashOption(default=datetime.datetime.utcnow().month, description="End month"),
+               endyear: int = nextcord.SlashOption(default=datetime.datetime.utcnow().year, description="End year"),
+               displaymode: str = nextcord.SlashOption(choices={"singular": "singular", "net": "net"}, default="singular",
+                                                       description="Whether to show activity one by one (singular) default, or net change (net)")):
+    invalidStart = False
+    invalidEnd = False
+
+    try:
+        startDate = datetime.datetime(startyear, startmonth, startday, tzinfo=timezone.utc)
+    except ValueError:
+        invalidStart = True
+
+    # Fyi, the end date is set one day forward as otherwise it takes 00:00 (midnight) as the start time, searching for
+    # all days preceding the end date
+    try:
+        endDate = datetime.datetime(endyear, endmonth, endday, tzinfo=timezone.utc) + datetime.timedelta(days=1)
+    except ValueError:
+        invalidEnd = True
+
+    # Now some logic checks.
+    if startDate > endDate:
+        await interaction.response.send_message("Start date is later in time than the end date.")
+        return
+
+    if displaymode.lower() != "net" and displaymode.lower() != "singular":
+        await interaction.response.send_message("Invalid display mode. Use \"singular\" or \"net\"")
+        return
+
+    unixTimeEpoch = datetime.datetime(1970, 1, 1, tzinfo=timezone.utc)
+    if startDate < unixTimeEpoch and endDate < unixTimeEpoch:
+        await interaction.response.send_message("Start and end date cannot both be prior to unix time epoch, 1/1/1970")
+        return
+    elif startDate < unixTimeEpoch:
+        await interaction.response.send_message("Start date cannot be prior to unix time epoch, 1/1/1970")
+        return
+    elif endDate < unixTimeEpoch:
+        await interaction.response.send_message("End date cannot be prior to unix time epoch, 1/1/1970")
+        return
+
+    if invalidStart and invalidStart:
+        await interaction.response.send_message("Invalid start and end date.")
+        return
+    elif invalidStart:
+        await interaction.response.send_message("Invalid start date.")
+        return
+    elif invalidEnd:
+        await interaction.response.send_message("Invalid end date.")
+        return
+
+    startUnix = startDate.timestamp()
+    endUnix = endDate.timestamp()
+
+    ratingUpdates = await tr.get_player_rating_from_db(name, startUnix, endUnix)
+
+    if ratingUpdates == -1:
+        await interaction.response.send_message("No record found with specified parameters.")
+        return
+
+    if type(displaymode) != str:
+        await interaction.response.send_message("Display mode has to be a string, singular or net.")
+    elif displaymode == "singular":
+        message = "Displaying rating updates for {0}:\n\n".format(name)
+        for update in ratingUpdates:
+            message += "\t{0}: {1}\n".format(datetime.datetime.fromtimestamp(update["timestamp"]),
+                                           update["rating"])
+        await interaction.response.send_message("```{0}```".format(message))
+    elif displaymode == "net":
+        net = ratingUpdates[-1]["rating"] - ratingUpdates[0]["rating"]
+        await interaction.response.send_message(
+            "```Net rating change between {0} and {1}: {2}```".format(startDate, endDate, net))
+
+
+# @search.subcommand(name="elapsedtime", description="Gets activity of a player for the past amount of time chosen.")
+# async def elapsedtime(interaction: Interaction, name: str, day: int, hour: int, minute: int):
+# pass
+
+
+@search.subcommand(name="current", description="Gets current rating of player.")
+async def current(interaction: Interaction, name: str):
+    ratingInfo = await tr.get_player_rating_from_db(name)
+    rating = ratingInfo["rating"]
+    timestamp = ratingInfo["timestamp"]
+    date = datetime.datetime.fromtimestamp(timestamp)
+
+    if rating == -1:
+        await interaction.response.send_message("Player {0} not found in database.".format(name))
+    else:
+        await interaction.response.send_message("```Current rating for {0}: {1} at {2}```".format(name, rating, date))
+
+
+database_update_loop.start()
+client.run("OTk3Mjg3MjQ0MzgzNjYyMDkx.GLRKvQ.g3HnF5BaoOLQC5uwzWL4vr3DEq12MEZ1wj3e3o")
