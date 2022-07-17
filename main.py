@@ -42,7 +42,8 @@ async def date(interaction: Interaction,
                endday: int = nextcord.SlashOption(default=datetime.datetime.utcnow().day, description="End day"),
                endmonth: int = nextcord.SlashOption(default=datetime.datetime.utcnow().month, description="End month"),
                endyear: int = nextcord.SlashOption(default=datetime.datetime.utcnow().year, description="End year"),
-               displaymode: str = nextcord.SlashOption(choices={"singular": "singular", "net": "net"}, default="singular",
+               displaymode: str = nextcord.SlashOption(choices={"singular": "singular", "net": "net"},
+                                                       default="singular",
                                                        description="Whether to show activity one by one (singular) default, or net change (net)")):
     invalidStart = False
     invalidEnd = False
@@ -62,10 +63,6 @@ async def date(interaction: Interaction,
     # Now some logic checks.
     if startDate > endDate:
         await interaction.response.send_message("Start date is later in time than the end date.")
-        return
-
-    if displaymode.lower() != "net" and displaymode.lower() != "singular":
-        await interaction.response.send_message("Invalid display mode. Use \"singular\" or \"net\"")
         return
 
     unixTimeEpoch = datetime.datetime(1970, 1, 1, tzinfo=timezone.utc)
@@ -98,13 +95,11 @@ async def date(interaction: Interaction,
         await interaction.response.send_message("No record found with specified parameters.")
         return
 
-    if type(displaymode) != str:
-        await interaction.response.send_message("Display mode has to be a string, singular or net.")
-    elif displaymode == "singular":
+    if displaymode == "singular":
         message = "Displaying rating updates for {0}:\n\n".format(name)
         for update in ratingUpdates:
             message += "\t{0}: {1}\n".format(datetime.datetime.fromtimestamp(update["timestamp"]),
-                                           update["rating"])
+                                             update["rating"])
         await interaction.response.send_message("```{0}```".format(message))
     elif displaymode == "net":
         net = ratingUpdates[-1]["rating"] - ratingUpdates[0]["rating"]
