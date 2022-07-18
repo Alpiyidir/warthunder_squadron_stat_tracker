@@ -85,6 +85,10 @@ async def update_squadron_info(squadronName):
         currentSquadronId = c.fetchone()["id"]
 
     for playerName, currentRating in playerRatings.items():
+        # Edge case, people who have emails for their names can show up as duplicates
+        if "[email protected]" in playerName:
+            continue
+
         c.execute("SELECT id FROM players WHERE name = ?", [playerName])
         player = c.fetchone()
 
@@ -102,7 +106,7 @@ async def update_squadron_info(squadronName):
         # rating entry, otherwise, it just writes the current rating entry as the player has never been logged
         # before
         currentTime = int(datetime.datetime.now().timestamp())
-        dbUpdatedForPlayer = False
+        ratingAndSquadronAreSame = False
         # Fetches most recent rating entry using timestamp
         c.execute(
             "SELECT rating, squadron_id, timestamp FROM activity WHERE player_id = ? ORDER BY timestamp DESC LIMIT 1",
@@ -116,15 +120,15 @@ async def update_squadron_info(squadronName):
             # If the current rating of the player is the same as the database entry is the same, no new entry is
             # created and the timestamp for the db entry is edited, otherwise, a new entry with the new timestamp of
             # the time this rating was first seen is created
-            #if currentRating == dbRating and currentSquadronId == dbSquadronId:
-            #    c.execute("UPDATE activity SET timestamp = ? WHERE player_id = ? AND timestamp = ?",
-            #              [currentTime, playerId, dbTimestamp])
-            #    conn.commit()
-            #    dbUpdatedForPlayer = True
+            if currentRating == dbRating and currentSquadronId == dbSquadronId:
+                #c.execute("UPDATE activity SET timestamp = ? WHERE player_id = ? AND timestamp = ?",
+                #          [currentTime, playerId, dbTimestamp])
+                #conn.commit()
+                ratingAndSquadronAreSame = True
 
         # If no action has yet been done on the db, there either wasn't a player that existed, or if there was a
         # player that previously existed in the db their rating/squadron has changed therefore a new entry is made
-        if not dbUpdatedForPlayer:
+        if not ratingAndSquadronAreSame:
             c.execute("INSERT INTO activity (player_id, squadron_id, rating, timestamp) VALUES (?, ?, ?, ?)",
                       [playerId, currentSquadronId, currentRating, currentTime])
             conn.commit()
@@ -188,7 +192,6 @@ async def get_player_rating_from_db(playerName, timeRange=None, getPreviousToTim
             else:
                 return row
         elif getPreviousToTimestamp:
-            print(f"SQUADRONID: {squadronId}, TIMESTAMP: {getPreviousToTimestamp}, playername: {playerName}")
             c.execute(
                 "SELECT rating, timestamp FROM activity WHERE timestamp < ? AND squadron_id = ? AND player_id IN(SELECT id FROM players WHERE name = ?) ORDER BY timestamp DESC",
                 [getPreviousToTimestamp, squadronId, playerName.lower()])
