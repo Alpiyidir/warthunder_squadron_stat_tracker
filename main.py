@@ -17,6 +17,7 @@ squibTimeZones = {"EU": [14, 22], "US": [2, 8]}
 
 client = commands.Bot(command_prefix=commandPrefix, intents=intents)
 
+
 @client.event
 async def on_ready():
     print("Wakey wakey, I am awake.")
@@ -110,62 +111,44 @@ async def date(interaction: Interaction,
             # this is the first instance of a rating in this timeslot, which is the last rating update that happened in
             # the previous session and got this specific timestamp when the player finished their game in the next
             # timeslot, so the first entry seen here is also from the previous squib timeslot
-            print(update["rating"], update["timestamp"], lastRatingBeforeSession)
-            print(f"lastunixinterval: {lastUnixInterval} currentunix: {currentUnixInterval}")
             if lastUnixInterval != currentUnixInterval and lastUnixInterval != -1:
-                print("in")
                 # If there is a last rating before session this means that this if is the continuation of a time session
                 if lastRatingBeforeSession is not None:
-                    print("TEST")
-                    print(lastUnixInterval["timeslotName"])
                     netChange = update["rating"] - lastRatingBeforeSession
                     # Net change won't work for first timeslot entry of the list
                     tmpMessage = "\n{0} Timeslot on {1} NET CHANGE: {2}\n".format(lastUnixInterval["timeslotName"],
-                                                                                   updateDate.strftime("%d/%m/%y"),
-                                                                                   netChange) + tmpMessage
+                                                                                  datetime.datetime.utcfromtimestamp(
+                                                                                      lastUnixInterval[
+                                                                                          "start"]).strftime(
+                                                                                      "%d/%m/%y"),
+                                                                                  netChange) + tmpMessage
                     message += tmpMessage
                     tmpMessage = ""
 
                     message += "\t{0}: {1}\n".format(updateDate, update["rating"])
                     lastRatingBeforeSession = None
+                    continue
+
+            if lastRatingBeforeSession is None:
+                # If this entry is the first ever entry in the ratingUpdates, then db has to fetch latest entry prior to
+                # this first entry
+                lastRatingBeforeSession = await tr.get_player_rating_from_db(playerName=name,
+                                                                             getPreviousToTimestamp=update[
+                                                                                 "timestamp"])
+
+                # -1 means that there are no rating entries prior to this rating from the same squadron, so the
+                # current entry is the first ever recorded entry
+                if lastRatingBeforeSession == -1:
+                    lastRatingBeforeSession = update["rating"]
+                    message += "\t{0}: {1} TIMESLOT UNKNOWN\n\n".format(
+                        updateDate,
+                        lastRatingBeforeSession)
                 else:
-                    # If this entry is the first ever entry in the ratingUpdates, then db has to fetch latest entry prior to
-                    # this first entry
-                    lastRatingBeforeSession = await tr.get_player_rating_from_db(playerName=name, getPreviousToTimestamp=update[
-                        "timestamp"])
+                    lastRatingBeforeSession = lastRatingBeforeSession["rating"]
 
-                    # -1 means that there are no rating entries prior to this rating from the same squadron, so the
-                    # current entry is the first ever recorded entry
-                    if lastRatingBeforeSession == -1:
-                        lastRatingBeforeSession = update["rating"]
-                        message += "\t{0}: {1} TIMESLOT UNKNOWN\n".format(
-                            updateDate,
-                            lastRatingBeforeSession)
-                    else:
-                        lastRatingBeforeSession = lastRatingBeforeSession["rating"]
-
-                if currentUnixInterval == -1:
-                    print(f"SCORE {update['rating']}")
-            else:
-                if lastRatingBeforeSession is None:
-                    # If this entry is the first ever entry in the ratingUpdates, then db has to fetch latest entry prior to
-                    # this first entry
-                    lastRatingBeforeSession = await tr.get_player_rating_from_db(playerName=name, getPreviousToTimestamp=update[
-                        "timestamp"])
-
-                    # -1 means that there are no rating entries prior to this rating from the same squadron, so the
-                    # current entry is the first ever recorded entry
-                    if lastRatingBeforeSession == -1:
-                        lastRatingBeforeSession = update["rating"]
-                        message += "\t{0}: {1} TIMESLOT UNKNOWN\n\n".format(
-                            updateDate,
-                            lastRatingBeforeSession)
-                    else:
-                        lastRatingBeforeSession = lastRatingBeforeSession["rating"]
-
-                tmpMessage += "\t{0}: {1} \n".format(
-                    updateDate,
-                    update["rating"])
+            tmpMessage += "\t{0}: {1} \n".format(
+                updateDate,
+                update["rating"])
 
             lastUnixInterval = currentUnixInterval
 
