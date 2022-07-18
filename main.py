@@ -99,39 +99,22 @@ async def date(interaction: Interaction,
         return
 
     if displaymode == "singular":
-        message = "Displaying rating updates for {0}:\n\n".format(name)
+        message = "Displaying rating updates for {0}:\n".format(name)
 
-        lastRatingBeforeSession = None
-        lastUnixInterval = None
+        previous = {"interval": None, "rating": None, "date": None}
+        lastUpdate = False
         tmpMessage = ""
-        for update in ratingUpdates:
-            noTmpMsg = False
+        for i, update in enumerate(ratingUpdates):
+            if i == len(ratingUpdates) - 1:
+                lastUpdate = True
+            elif i > 0:
+                previous["date"] = datetime.datetime.utcfromtimestamp(ratingUpdates[i - 1]["timestamp"])
+                previous["interval"] = await create_unix_time_zone_for_timeslot(previous["date"])
+                previous["rating"] = ratingUpdates[i - 1]
 
+            tmpAppend = True
             updateDate = datetime.datetime.utcfromtimestamp(update["timestamp"])
             currentUnixInterval = await create_unix_time_zone_for_timeslot(updateDate)
-
-            # this is the first instance of a rating in this timeslot, which is the last rating update that happened in
-            # the previous session and got this specific timestamp when the player finished their game in the next
-            # timeslot, so the first entry seen here is also from the previous squib timeslot
-            if lastUnixInterval != currentUnixInterval and lastUnixInterval != -1:
-                # If there is a last rating before session this means that this if is the continuation of a time session
-                if lastRatingBeforeSession is not None:
-                    netChange = update["rating"] - lastRatingBeforeSession
-                    # Net change won't work for first timeslot entry of the list
-                    tmpMessage = "\n{0} Timeslot on {1} NET CHANGE: {2}\n".format(lastUnixInterval["timeslotName"],
-                                                                                  datetime.datetime.utcfromtimestamp(
-                                                                                      lastUnixInterval[
-                                                                                          "start"]).strftime(
-                                                                                      "%d/%m/%y"),
-                                                                                  netChange) + tmpMessage
-                    message += tmpMessage
-                    tmpMessage = ""
-
-                    message += "\t{0}: {1}\n".format(updateDate, update["rating"])
-                    lastRatingBeforeSession = None
-
-                    # same function as continue but lastunixinterval = currentunixinterval has to run so this bool
-                    noTmpMsg = True
 
             if lastRatingBeforeSession is None:
                 # If this entry is the first ever entry in the ratingUpdates, then db has to fetch latest entry prior to
@@ -139,23 +122,45 @@ async def date(interaction: Interaction,
                 lastRatingBeforeSession = await tr.get_player_rating_from_db(playerName=name,
                                                                              getPreviousToTimestamp=update[
                                                                                  "timestamp"])
+
                 # -1 means that there are no rating entries prior to this rating from the same squadron, so the
                 # current entry is the first ever recorded entry
                 if lastRatingBeforeSession == -1:
                     lastRatingBeforeSession = update["rating"]
-                    message += "\t{0}: {1} TIMESLOT UNKNOWN\n\n".format(
+                    message += "\n\t{0}: {1} FIRST ENTRY\n".format(
                         updateDate,
                         lastRatingBeforeSession)
-                    noTmpMsg = True
+                    tmpAppend = False
                 else:
                     lastRatingBeforeSession = lastRatingBeforeSession["rating"]
+            elif lastRatingBeforeSession is not None and tmpAppend:
+                if previous["interval"] != currentUnixInterval and previous["interval"] != -1:
+                    netChange = previous["rating"] - lastRatingBeforeSession
+                    # Net change won't work for first timeslot entry of the list
+                    tmpMessage = "\n{0} Timeslot on {1} NET CHANGE: {2}\n".format(previous["interval"]["timeslotName"],
+                                                                                  updateDate.strftime("%d/%m/%y"),
+                                                                                  netChange) + tmpMessage
+                    message += tmpMessage
+                    lastRatingBeforeSession = update["rating"]
+                    tmpMessage = ""
 
-            if not noTmpMsg:
+            if tmpAppend:
                 tmpMessage += "\t{0}: {1} \n".format(
                     updateDate,
                     update["rating"])
 
-            lastUnixInterval = currentUnixInterval
+            if lastUpdate and lastRatingBeforeSession and len(ratingUpdates) != 1:
+                if previous["rating"]:
+                    netChange = update["rating"] - previous["rating"]
+                else:
+                    netChange = update["rating"]
+                # Net change won't work for first timeslot entry of the list
+                message += "\n{0} Timeslot on {1} NET CHANGE: {2}\n".format(currentUnixInterval["timeslotName"],
+                                                                            updateDate.strftime("%d/%m/%y"),
+                                                                            netChange) + tmpMessage
+            previous["interval"] = currentUnixInterval
+            previous["rating"] = update["rating"]
+            previous["date"] = updateDate
 
         await interaction.response.send_message("```{0}```".format(message))
     elif displaymode == "net":
@@ -196,9 +201,6 @@ async def create_unix_time_zone_for_timeslot(currentDate: datetime.datetime):
         # normal to get end of current hr
         timeSlotEnd = (timeSlotEnd + datetime.timedelta(hours=2)).timestamp()
 
-        print(timeslotName)
-        print(timeSlotStart, timeSlotEnd)
-        print(currentDate.timestamp())
         if timeSlotStart <= currentDate.timestamp() <= timeSlotEnd:
             return {"start": timeSlotStart, "end": timeSlotEnd, "timeslotName": timeslotName}
 
