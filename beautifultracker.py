@@ -101,7 +101,7 @@ async def update_squadron_info(squadronName):
         # If player is already in the database checks if the last rating entry has the same rating as the current
         # rating entry, otherwise, it just writes the current rating entry as the player has never been logged
         # before
-        currentTime = int(datetime.datetime.utcnow().timestamp())
+        currentTime = int(datetime.datetime.now().timestamp())
         dbUpdatedForPlayer = False
         # Fetches most recent rating entry using timestamp
         c.execute(
@@ -154,7 +154,7 @@ async def get_player_rating_from_db(playerName, timeRange=None, getPreviousToTim
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
-    if not (timeRange and getPreviousToTimestamp):
+    if not timeRange and not getPreviousToTimestamp:
         c.execute(
             "SELECT rating, timestamp FROM activity WHERE player_id IN(SELECT id FROM players WHERE name = ?) ORDER BY timestamp DESC",
             [playerName.lower()])
@@ -166,14 +166,20 @@ async def get_player_rating_from_db(playerName, timeRange=None, getPreviousToTim
         else:
             return row
     else:
-        squadron_id = c.execute(
+        c.execute(
             "SELECT squadron_id FROM activity WHERE player_id IN(SELECT id FROM players WHERE name = ?) ORDER BY timestamp DESC",
             [playerName.lower()])
+        squadronId = c.fetchone()
+
+        if squadronId:
+            squadronId = squadronId["squadron_id"]
+        else:
+            return -1
 
         if timeRange:
             c.execute(
                 "SELECT rating, timestamp FROM activity WHERE timestamp > ? AND timestamp < ? AND squadron_id = ? AND player_id IN(SELECT id FROM players WHERE name = ?) ORDER BY timestamp ASC",
-                [timeRange["start"], timeRange["end"], squadron_id, playerName.lower()])
+                [timeRange["start"], timeRange["end"], squadronId, playerName.lower()])
             row = c.fetchall()
 
             conn.close()
@@ -182,9 +188,10 @@ async def get_player_rating_from_db(playerName, timeRange=None, getPreviousToTim
             else:
                 return row
         elif getPreviousToTimestamp:
+            print(f"SQUADRONID: {squadronId}, TIMESTAMP: {getPreviousToTimestamp}, playername: {playerName}")
             c.execute(
-                "SELECT rating, timestamp FROM activity WHERE timestamp < ? AND squadron_id = ? player_id IN(SELECT id FROM players WHERE name = ?) ORDER BY timestamp DESC",
-                [getPreviousToTimestamp, squadron_id, playerName.lower()])
+                "SELECT rating, timestamp FROM activity WHERE timestamp < ? AND squadron_id = ? AND player_id IN(SELECT id FROM players WHERE name = ?) ORDER BY timestamp DESC",
+                [getPreviousToTimestamp, squadronId, playerName.lower()])
             row = c.fetchone()
 
             conn.close()
