@@ -158,9 +158,6 @@ async def date(interaction: Interaction,
                 message += "\n{0} Timeslot on {1} NET CHANGE: {2}\n".format(currentUnixInterval["timeslotName"],
                                                                             updateDate.strftime("%d/%m/%y"),
                                                                             netChange) + tmpMessage
-            previous["interval"] = currentUnixInterval
-            previous["rating"] = update["rating"]
-            previous["date"] = updateDate
 
         await interaction.response.send_message("```{0}```".format(message))
     elif displaymode == "net":
