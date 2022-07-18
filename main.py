@@ -13,6 +13,8 @@ intents.message_content = True
 
 commandPrefix = "#"
 
+squibTimeZones = {"EU": [14, 22], "US": [2, 8]}
+
 client = commands.Bot(command_prefix=commandPrefix, intents=intents)
 
 
@@ -29,6 +31,10 @@ async def database_update_loop():
 # This never gets called as it has subcommands.
 @client.slash_command(name="search")
 async def search(interaction: Interaction):
+    pass
+
+
+def create_unix_time_zone_for_timeslot(updateDate):
     pass
 
 
@@ -89,7 +95,7 @@ async def date(interaction: Interaction,
     startUnix = startDate.timestamp()
     endUnix = endDate.timestamp()
 
-    ratingUpdates = await tr.get_player_rating_from_db(name, startUnix, endUnix)
+    ratingUpdates = await tr.get_player_rating_from_db(name, timeRange={"start": startUnix, "end": endUnix})
 
     if ratingUpdates == -1:
         await interaction.response.send_message("No record found with specified parameters.")
@@ -97,9 +103,39 @@ async def date(interaction: Interaction,
 
     if displaymode == "singular":
         message = "Displaying rating updates for {0}:\n\n".format(name)
+
+        lastRatingBeforeSession = None
+        lastUnixInterval = None
+        tmpMessage = ""
         for update in ratingUpdates:
-            message += "\t{0}: {1}\n".format(datetime.datetime.fromtimestamp(update["timestamp"]),
-                                             update["rating"])
+            updateDate = datetime.datetime.fromtimestamp(update["timestamp"])
+            currentUnixInterval = await create_unix_time_zone_for_timeslot(updateDate)
+
+            # this is the first instance of a rating in this timeslot, which is the last rating update that happened in
+            # the previous session and got this specific timestamp when the player finished their game in the next
+            # timeslot, so the first entry seen here is also from the previous squib timeslot
+            if lastUnixInterval != currentUnixInterval:
+                # If there is a last rating before session this means that...
+                if lastRatingBeforeSession:
+                    netChange = update["rating"] - lastRatingBeforeSession
+                    # Net change won't work for first timeslot entry of the list
+                    tmpMessage += "'''{0} Timeslot on {1} NET CHANGE: {2}\n".format(currentUnixInterval["timeslotName"],
+                                                                                    updateDate.strptime("%d%m%y"), netChange)
+                    message += tmpMessage
+                    tmpMessage = ""
+
+                    message += "\t{0}: {1}\n".format(updateDate, update["rating"])
+                else:
+                    # If this entry is the first ever entry in the ratingUpdates, then db has to fetch latest entry prior to
+                    # this first entry
+                    lastRatingBeforeSession = await tr.get_player_rating_from_db(name, getPreviousToTimestamp=update["rating"])
+                    if lastRatingBeforeSession == -1:
+                        lastRatingBeforeSession = update["rating"]
+
+
+
+            lastUnixInterval = currentUnixInterval
+
         await interaction.response.send_message("```{0}```".format(message))
     elif displaymode == "net":
         net = ratingUpdates[-1]["rating"] - ratingUpdates[0]["rating"]
@@ -123,6 +159,28 @@ async def current(interaction: Interaction, name: str):
         await interaction.response.send_message("Player {0} not found in database.".format(name))
     else:
         await interaction.response.send_message("```Current rating for {0}: {1} at {2}```".format(name, rating, date))
+
+
+async def create_unix_time_zone_for_timeslot(currentDate: datetime.datetime):
+    # The first part of this code decides whether it is the eu or us timeslot the activity was in
+    for timeslotName, timezoneRange in squibTimeZones.items():
+        timeSlotStart = datetime.datetime(currentDate.year, currentDate.month, currentDate.day, timezoneRange["start"],
+                                          tzinfo=timezone.utc).timestamp()
+        timeSlotEnd = datetime.datetime(currentDate.year, currentDate.month, currentDate.day, timezoneRange["end"],
+                                        tzinfo=timezone.utc).timestamp()
+
+        # By making the start time 1 hour prior, it accounts for daylight savings time (sloppily)
+        timeSlotStart -= datetime.timedelta(hours=1)
+        # By making end 2h later, accounts for games that might end at the start of the next hour, 1h shift is the
+        # normal to get end of current hr
+        timeSlotEnd += datetime.timedelta(hours=2)
+
+        if timeSlotStart <= currentDate <= timeSlotEnd:
+            return {"start": timeSlotStart, "end": timeSlotEnd, "timeslotName": timeslotName}
+
+    # If update doesn't fit any timeslots, then it was either the last game the player played in a timeslot and
+    # is getting constantly updated
+    return -1
 
 
 database_update_loop.start()
