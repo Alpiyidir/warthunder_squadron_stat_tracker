@@ -102,27 +102,19 @@ async def date(interaction: Interaction,
         message = "Displaying rating updates for {0}:\n".format(name)
 
         previous = {"interval": None, "rating": None, "date": None}
+        lastRatingBeforeSession = None
         lastUpdate = False
         tmpMessage = ""
         for i, update in enumerate(ratingUpdates):
-            if i == len(ratingUpdates) - 1:
-                lastUpdate = True
-            elif i > 0:
-                previous["date"] = datetime.datetime.utcfromtimestamp(ratingUpdates[i - 1]["timestamp"])
-                previous["interval"] = await create_unix_time_zone_for_timeslot(previous["date"])
-                previous["rating"] = ratingUpdates[i - 1]
-
-            tmpAppend = True
             updateDate = datetime.datetime.utcfromtimestamp(update["timestamp"])
             currentUnixInterval = await create_unix_time_zone_for_timeslot(updateDate)
 
-            if lastRatingBeforeSession is None:
+            if i == 0:
                 # If this entry is the first ever entry in the ratingUpdates, then db has to fetch latest entry prior to
                 # this first entry
                 lastRatingBeforeSession = await tr.get_player_rating_from_db(playerName=name,
                                                                              getPreviousToTimestamp=update[
                                                                                  "timestamp"])
-
                 # -1 means that there are no rating entries prior to this rating from the same squadron, so the
                 # current entry is the first ever recorded entry
                 if lastRatingBeforeSession == -1:
@@ -130,28 +122,35 @@ async def date(interaction: Interaction,
                     message += "\n\t{0}: {1} FIRST ENTRY\n".format(
                         updateDate,
                         lastRatingBeforeSession)
-                    tmpAppend = False
+                    continue
                 else:
                     lastRatingBeforeSession = lastRatingBeforeSession["rating"]
-            elif lastRatingBeforeSession is not None and tmpAppend:
-                if previous["interval"] != currentUnixInterval and previous["interval"] != -1:
-                    netChange = previous["rating"] - lastRatingBeforeSession
-                    # Net change won't work for first timeslot entry of the list
-                    tmpMessage = "\n{0} Timeslot on {1} NET CHANGE: {2}\n".format(previous["interval"]["timeslotName"],
-                                                                                  updateDate.strftime("%d/%m/%y"),
-                                                                                  netChange) + tmpMessage
-                    message += tmpMessage
-                    lastRatingBeforeSession = update["rating"]
-                    tmpMessage = ""
 
-            if tmpAppend:
-                tmpMessage += "\t{0}: {1} \n".format(
-                    updateDate,
-                    update["rating"])
+            if i > 0:
+                previous["date"] = datetime.datetime.utcfromtimestamp(ratingUpdates[i - 1]["timestamp"])
+                previous["interval"] = await create_unix_time_zone_for_timeslot(previous["date"])
+                previous["rating"] = ratingUpdates[i - 1]["rating"]
 
-            if lastUpdate and lastRatingBeforeSession and len(ratingUpdates) != 1:
+            if i == len(ratingUpdates) - 1:
+                lastUpdate = True
+
+            if previous["interval"] != currentUnixInterval and previous["interval"] != -1:
+                netChange = previous["rating"] - lastRatingBeforeSession
+                # Net change won't work for first timeslot entry of the list
+                tmpMessage = "\n{0} Timeslot on {1} NET CHANGE: {2}\n".format(previous["interval"]["timeslotName"],
+                                                                              updateDate.strftime("%d/%m/%y"),
+                                                                              netChange) + tmpMessage
+                message += tmpMessage
+                lastRatingBeforeSession = update["rating"]
+                tmpMessage = ""
+
+            tmpMessage += "\t{0}: {1} \n".format(
+                updateDate,
+                update["rating"])
+
+            if lastUpdate and lastRatingBeforeSession:
                 if previous["rating"]:
-                    netChange = update["rating"] - previous["rating"]
+                    netChange = update["rating"] - lastRatingBeforeSession
                 else:
                     netChange = update["rating"]
                 # Net change won't work for first timeslot entry of the list
