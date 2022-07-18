@@ -116,11 +116,11 @@ async def update_squadron_info(squadronName):
             # If the current rating of the player is the same as the database entry is the same, no new entry is
             # created and the timestamp for the db entry is edited, otherwise, a new entry with the new timestamp of
             # the time this rating was first seen is created
-            if currentRating == dbRating and currentSquadronId == dbSquadronId:
-                c.execute("UPDATE activity SET timestamp = ? WHERE player_id = ? AND timestamp = ?",
-                          [currentTime, playerId, dbTimestamp])
-                conn.commit()
-                dbUpdatedForPlayer = True
+            #if currentRating == dbRating and currentSquadronId == dbSquadronId:
+            #    c.execute("UPDATE activity SET timestamp = ? WHERE player_id = ? AND timestamp = ?",
+            #              [currentTime, playerId, dbTimestamp])
+            #    conn.commit()
+            #    dbUpdatedForPlayer = True
 
         # If no action has yet been done on the db, there either wasn't a player that existed, or if there was a
         # player that previously existed in the db their rating/squadron has changed therefore a new entry is made
