@@ -115,12 +115,13 @@ async def date(interaction: Interaction,
             # the previous session and got this specific timestamp when the player finished their game in the next
             # timeslot, so the first entry seen here is also from the previous squib timeslot
             if lastUnixInterval != currentUnixInterval:
-                # If there is a last rating before session this means that...
+                # If there is a last rating before session this means that this if is the continuation of a time session
                 if lastRatingBeforeSession:
                     netChange = update["rating"] - lastRatingBeforeSession
                     # Net change won't work for first timeslot entry of the list
                     tmpMessage += "'''{0} Timeslot on {1} NET CHANGE: {2}\n".format(currentUnixInterval["timeslotName"],
-                                                                                    updateDate.strptime("%d%m%y"), netChange)
+                                                                                    updateDate.strptime("%d%m%y"),
+                                                                                    netChange)
                     message += tmpMessage
                     tmpMessage = ""
 
@@ -128,11 +129,17 @@ async def date(interaction: Interaction,
                 else:
                     # If this entry is the first ever entry in the ratingUpdates, then db has to fetch latest entry prior to
                     # this first entry
-                    lastRatingBeforeSession = await tr.get_player_rating_from_db(name, getPreviousToTimestamp=update["rating"])
+                    lastRatingBeforeSession = await tr.get_player_rating_from_db(name, getPreviousToTimestamp=update[
+                        "rating"])
+
+                    # -1 means that there are no rating entries prior to this rating from the same squadron, so the
+                    # current entry is the first ever recorded entry
                     if lastRatingBeforeSession == -1:
                         lastRatingBeforeSession = update["rating"]
-
-
+                        message += "\t{0}: {1} FIRST ENTRY RECORDED, TIMESLOT UNKNOWN\n".format(
+                            datetime.datetime.fromtimestamp(update["timestamp"]),
+                            lastRatingBeforeSession["rating"])
+                        continue
 
             lastUnixInterval = currentUnixInterval
 

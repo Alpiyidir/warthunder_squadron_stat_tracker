@@ -147,14 +147,14 @@ async def update_info_for_all_squadrons():
 
 # TODO don't forget if a player changes squadrons during the player search they will have to get added to the list
 # TODO again, if this happens nuke their old player entry in the table until their new squadron is added
-# startTime and endTime are both unix timestamps
+# only gets rating for same squadron as latest entry
 async def get_player_rating_from_db(playerName, timeRange=None, getPreviousToTimestamp=None):
     # TODO ADD SEARCH WITH SQUADRON ID?
     conn = sqlite3.connect("squadronstats.db")
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
-    if not timeRange and not getPreviousToTimestamp:
+    if not (timeRange and getPreviousToTimestamp):
         c.execute(
             "SELECT rating, timestamp FROM activity WHERE player_id IN(SELECT id FROM players WHERE name = ?) ORDER BY timestamp DESC",
             [playerName.lower()])
@@ -165,25 +165,30 @@ async def get_player_rating_from_db(playerName, timeRange=None, getPreviousToTim
             return -1
         else:
             return row
-    elif timeRange:
-        c.execute(
-            "SELECT rating, timestamp FROM activity WHERE timestamp > ? AND timestamp < ? AND player_id IN(SELECT id FROM players WHERE name = ?) ORDER BY timestamp ASC",
-            [timeRange["start"], timeRange["end"], playerName.lower()])
-        row = c.fetchall()
+    else:
+        squadron_id = c.execute(
+            "SELECT squadron_id FROM activity WHERE player_id IN(SELECT id FROM players WHERE name = ?) ORDER BY timestamp DESC",
+            [playerName.lower()])
 
-        conn.close()
-        if not row:
-            return -1
-        else:
-            return row
-    elif getPrevious:
-        c.execute(
-            "SELECT rating, timestamp FROM activity WHERE timestamp < ? AND squadron_id = ? player_id IN(SELECT id FROM players WHERE name = ?) ORDER BY timestamp DESC",
-            [getPrevious["timestamp"], getPrevious["squadronId"], playerName.lower()])
-        row = c.fetchone()
+        if timeRange:
+            c.execute(
+                "SELECT rating, timestamp FROM activity WHERE timestamp > ? AND timestamp < ? AND squadron_id = ? AND player_id IN(SELECT id FROM players WHERE name = ?) ORDER BY timestamp ASC",
+                [timeRange["start"], timeRange["end"], squadron_id, playerName.lower()])
+            row = c.fetchall()
 
-        conn.close()
-        if not row:
-            return -1
-        else:
-            return row
+            conn.close()
+            if not row:
+                return -1
+            else:
+                return row
+        elif getPreviousToTimestamp:
+            c.execute(
+                "SELECT rating, timestamp FROM activity WHERE timestamp < ? AND squadron_id = ? player_id IN(SELECT id FROM players WHERE name = ?) ORDER BY timestamp DESC",
+                [getPreviousToTimestamp, squadron_id, playerName.lower()])
+            row = c.fetchone()
+
+            conn.close()
+            if not row:
+                return -1
+            else:
+                return row
