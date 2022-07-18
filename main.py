@@ -105,6 +105,8 @@ async def date(interaction: Interaction,
         lastUnixInterval = None
         tmpMessage = ""
         for update in ratingUpdates:
+            noTmpMsg = False
+
             updateDate = datetime.datetime.utcfromtimestamp(update["timestamp"])
             currentUnixInterval = await create_unix_time_zone_for_timeslot(updateDate)
 
@@ -127,7 +129,9 @@ async def date(interaction: Interaction,
 
                     message += "\t{0}: {1}\n".format(updateDate, update["rating"])
                     lastRatingBeforeSession = None
-                    continue
+
+                    # same function as continue but lastunixinterval = currentunixinterval has to run so this bool
+                    noTmpMsg = True
 
             if lastRatingBeforeSession is None:
                 # If this entry is the first ever entry in the ratingUpdates, then db has to fetch latest entry prior to
@@ -135,7 +139,6 @@ async def date(interaction: Interaction,
                 lastRatingBeforeSession = await tr.get_player_rating_from_db(playerName=name,
                                                                              getPreviousToTimestamp=update[
                                                                                  "timestamp"])
-
                 # -1 means that there are no rating entries prior to this rating from the same squadron, so the
                 # current entry is the first ever recorded entry
                 if lastRatingBeforeSession == -1:
@@ -143,12 +146,14 @@ async def date(interaction: Interaction,
                     message += "\t{0}: {1} TIMESLOT UNKNOWN\n\n".format(
                         updateDate,
                         lastRatingBeforeSession)
+                    noTmpMsg = True
                 else:
                     lastRatingBeforeSession = lastRatingBeforeSession["rating"]
 
-            tmpMessage += "\t{0}: {1} \n".format(
-                updateDate,
-                update["rating"])
+            if not noTmpMsg:
+                tmpMessage += "\t{0}: {1} \n".format(
+                    updateDate,
+                    update["rating"])
 
             lastUnixInterval = currentUnixInterval
 
@@ -166,16 +171,14 @@ async def date(interaction: Interaction,
 
 @search.subcommand(name="current", description="Gets current rating of player.")
 async def current(interaction: Interaction, name: str):
-    ratingInfo = await tr.get_player_rating_from_db(playerName=name)
-    rating = ratingInfo["rating"]
-    timestamp = ratingInfo["timestamp"]
-    date = datetime.datetime.utcfromtimestamp(timestamp)
-    print(date.timestamp())
-    print(date)
+    ratingRow = await tr.get_player_rating_from_db(playerName=name)
 
-    if rating == -1:
+    if ratingRow == -1:
         await interaction.response.send_message("Player {0} not found in database.".format(name))
     else:
+        rating = ratingRow["rating"]
+        timestamp = ratingRow["timestamp"]
+        date = datetime.datetime.utcfromtimestamp(timestamp)
         await interaction.response.send_message("```Current rating for {0}: {1} at {2}```".format(name, rating, date))
 
 
