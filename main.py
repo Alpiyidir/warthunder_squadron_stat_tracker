@@ -142,17 +142,18 @@ async def date(interaction: Interaction,
             if previous["interval"] != currentUnixInterval and previous["interval"] != -1 and tmpMessage != "":
                 netChange = previous["rating"] - lastRatingBeforeSession
                 # Net change won't work for first timeslot entry of the list
-                if currentUnixInterval != -1:
+                if previous["interval"] != -1:
                     tmpMessage = await create_timeslot_msg(previous["interval"]["timeslotName"],
-                                                     updateDate.strftime("%d/%m/%y"),
-                                                     netChange, winCount, validUpdateCount) + tmpMessage
-                else:
-                    # TODO In this case it should print out a bare message
-                    pass
+                                                           updateDate.strftime("%d/%m/%y"),
+                                                           netChange, winCount, validUpdateCount) + tmpMessage
 
                 validUpdateCount = 0
                 winCount = 0
                 message += tmpMessage
+                if currentUnixInterval == -1:
+                    message += "\n\t{0}: {1} UNKNOWN TIMESLOT\n".format(
+                        updateDate,
+                        lastRatingBeforeSession)
                 lastRatingBeforeSession = update["rating"]
                 tmpMessage = ""
 
@@ -177,9 +178,14 @@ async def date(interaction: Interaction,
                 else:
                     netChange = update["rating"]
                 # Net change won't work for first timeslot entry of the list
-                message += await create_timeslot_msg(previous["interval"]["timeslotName"],
-                                                     updateDate.strftime("%d/%m/%y"),
-                                                     netChange, winCount, validUpdateCount) + tmpMessage
+                if currentUnixInterval != -1:
+                    message += await create_timeslot_msg(currentUnixInterval["timeslotName"],
+                                                         updateDate.strftime("%d/%m/%y"),
+                                                         netChange, winCount, validUpdateCount) + tmpMessage
+                else:
+                    message += "\n\t{0}: {1} UNKNOWN TIMESLOT\n".format(
+                        updateDate,
+                        lastRatingBeforeSession)
             validUpdateCount += 1
 
         await interaction.response.send_message("```{0}```".format(message))
