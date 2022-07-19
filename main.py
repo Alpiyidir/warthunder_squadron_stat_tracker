@@ -101,6 +101,8 @@ async def date(interaction: Interaction,
     if displaymode == "singular":
         message = "Displaying rating updates for {0}:\n".format(name)
 
+        validUpdateCount = 0
+        winCount = 0
         previous = {"interval": None, "rating": None, "date": None}
         lastRatingBeforeSession = None
         lastUpdate = False
@@ -134,19 +136,40 @@ async def date(interaction: Interaction,
             if i == len(ratingUpdates) - 1:
                 lastUpdate = True
 
-            if previous["interval"] != currentUnixInterval and previous["interval"] != -1:
+            # first parameter is pretty self explanatory, if previous["interval"] == -1 then there has already been an
+            # entry made for the previous run of this loop where a timeslot message was appened to the message, so this
+            # run is ignored for one loop until the next interval can be checked, this is done so that if the first
+            if previous["interval"] != currentUnixInterval and previous["interval"] != -1 and tmpMessage != "":
                 netChange = previous["rating"] - lastRatingBeforeSession
                 # Net change won't work for first timeslot entry of the list
-                tmpMessage = "\n{0} Timeslot on {1} NET CHANGE: {2}\n".format(previous["interval"]["timeslotName"],
-                                                                              updateDate.strftime("%d/%m/%y"),
-                                                                              netChange) + tmpMessage
+                if currentUnixInterval != -1:
+                    tmpMessage = await create_timeslot_msg(previous["interval"]["timeslotName"],
+                                                     updateDate.strftime("%d/%m/%y"),
+                                                     netChange, winCount, validUpdateCount) + tmpMessage
+                else:
+                    # TODO In this case it should print out a bare message
+                    pass
+
+                validUpdateCount = 0
+                winCount = 0
                 message += tmpMessage
                 lastRatingBeforeSession = update["rating"]
                 tmpMessage = ""
 
-            tmpMessage += "\t{0}: {1} \n".format(
+            win = "L"
+            if previous["rating"]:
+                if update["rating"] > previous["rating"]:
+                    win = "W"
+            elif lastRatingBeforeSession:
+                if update["rating"] > lastRatingBeforeSession:
+                    win = "W"
+
+            if win == "W":
+                winCount += 1
+
+            tmpMessage += "\t{0}: {1} {2}\n".format(
                 updateDate,
-                update["rating"])
+                update["rating"], win)
 
             if lastUpdate and lastRatingBeforeSession:
                 if previous["rating"]:
@@ -154,9 +177,10 @@ async def date(interaction: Interaction,
                 else:
                     netChange = update["rating"]
                 # Net change won't work for first timeslot entry of the list
-                message += "\n{0} Timeslot on {1} NET CHANGE: {2}\n".format(currentUnixInterval["timeslotName"],
-                                                                            updateDate.strftime("%d/%m/%y"),
-                                                                            netChange) + tmpMessage
+                message += await create_timeslot_msg(previous["interval"]["timeslotName"],
+                                                     updateDate.strftime("%d/%m/%y"),
+                                                     netChange, winCount, validUpdateCount) + tmpMessage
+            validUpdateCount += 1
 
         await interaction.response.send_message("```{0}```".format(message))
     elif displaymode == "net":
@@ -203,6 +227,20 @@ async def create_unix_time_zone_for_timeslot(currentDate: datetime.datetime):
     # If update doesn't fit any timeslots, then it was either the last game the player played in a timeslot and
     # is getting constantly updated
     return -1
+
+
+async def create_timeslot_msg(previousTimeSlotName, dateString, netChange, winCount, gameCount):
+    return "\n{0} Timeslot on {1} NET CHANGE: {2} WINRATE: {3}%\n".format(
+        previousTimeSlotName,
+        dateString,
+        netChange, await calculate_win_rate(winCount, gameCount))
+
+
+async def calculate_win_rate(wins, games):
+    if games == 0:
+        return -1
+    else:
+        return int(wins / games * 100)
 
 
 client.run("OTk3Mjg3MjQ0MzgzNjYyMDkx.GLRKvQ.g3HnF5BaoOLQC5uwzWL4vr3DEq12MEZ1wj3e3o")
