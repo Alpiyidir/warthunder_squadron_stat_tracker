@@ -139,7 +139,7 @@ async def date(interaction: Interaction,
             # first parameter is pretty self explanatory, if previous["interval"] == -1 then there has already been an
             # entry made for the previous run of this loop where a timeslot message was appened to the message, so this
             # run is ignored for one loop until the next interval can be checked, this is done so that if the first
-            if previous["interval"] != currentUnixInterval and previous["interval"] != -1 and tmpMessage != "":
+            if previous["interval"] != currentUnixInterval and previous["interval"] != -1:
                 netChange = previous["rating"] - lastRatingBeforeSession
                 # Net change won't work for first timeslot entry of the list
                 if previous["interval"] != -1:
@@ -178,14 +178,10 @@ async def date(interaction: Interaction,
                 else:
                     netChange = update["rating"]
                 # Net change won't work for first timeslot entry of the list
-                if currentUnixInterval != -1:
-                    message += await create_timeslot_msg(currentUnixInterval["timeslotName"],
-                                                         updateDate.strftime("%d/%m/%y"),
-                                                         netChange, winCount, validUpdateCount) + tmpMessage
-                else:
-                    message += "\n\t{0}: {1} UNKNOWN TIMESLOT\n".format(
-                        updateDate,
-                        lastRatingBeforeSession)
+
+                message += await create_timeslot_msg(previous["interval"]["timeslotName"],
+                                                     updateDate.strftime("%d/%m/%y"),
+                                                     netChange, winCount, validUpdateCount) + tmpMessage
             validUpdateCount += 1
 
         await interaction.response.send_message("```{0}```".format(message))
