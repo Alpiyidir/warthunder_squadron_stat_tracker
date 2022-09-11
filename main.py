@@ -1,4 +1,5 @@
 import beautifultracker as tr
+import config
 
 import datetime
 from datetime import timezone
@@ -245,4 +246,4 @@ async def calculate_win_rate(wins, games):
         return int(wins / games * 100)
 
 
-client.run("OTk3Mjg3MjQ0MzgzNjYyMDkx.GLRKvQ.g3HnF5BaoOLQC5uwzWL4vr3DEq12MEZ1wj3e3o")
+client.run(config.API_KEY)
